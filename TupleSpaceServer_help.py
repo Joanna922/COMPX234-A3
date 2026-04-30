@@ -75,13 +75,24 @@ def handle_client(client_socket):
             # TASK 1: Read the first 3 bytes to get the message size, then read
             # the remaining (size - 3) bytes and decode to a string.
             # Hint: use receive_n(). If nothing arrives, client disconnected — break.
+            size_data = receive_n(client_socket, 3)
+            if not size_data:
+                break  
+            msg_size = int(size_data.decode())
+            message_buffer = receive_n(client_socket, msg_size - 3)
+            if not message_buffer:
+                break
+            message = message_buffer.decode()
 
 
             # Handle the request
-            response = handle_request(message_buffer)
+            response = handle_request(message)
 
             # TASK 2: Build the response string with its size prepended (3 digits + space),
             # then send it. Hint: total size = len(response) + 4. Use sendall().
+            resp_total_len = len(response) + 4
+            resp_msg = f"{resp_total_len:03d} {response}"
+            client_socket.sendall(resp_msg.encode())
 
     except (socket.error, ValueError):
         pass
@@ -112,6 +123,12 @@ def handle_request(message):
             # TASK 3: READ — look up key in tuple_space.
             # Return "OK (<key>, <value>) read" or "ERR <key> does not exist".
             increment_stat("read_count")
+            if key in tuple_space:
+                value = tuple_space[key]
+                return f"OK ({key}, {value}) read"
+            else:
+                return f"ERR {key} does not exist"
+
 
 
         elif op == "G":
@@ -119,6 +136,11 @@ def handle_request(message):
             # Return "OK (<key>, <value>) removed" or "ERR <key> does not exist".
             # Hint: dict.pop(key, None) removes and returns the value, or None if missing.
             increment_stat("get_count")
+            value = tuple_space.pop(key, None)
+            if value is not None:
+                return f"OK ({key}, {value}) removed"
+            else:
+                return f"ERR {key} does not exist"
 
 
         elif op == "P":
@@ -129,7 +151,15 @@ def handle_request(message):
             # TASK 5: PUT — add (key, value) only if key does not already exist.
             # Validate: len(value) <= 999 and len(key + " " + value) <= 970.
             # Return "OK (<key>, <value>) added" or "ERR <key> already exists".
+            if len(value) > 999 or len(f"{key} {value}") > 970:
+                increment_stat("error_count")
+                return "ERR Invalid value length"
             increment_stat("put_count")
+            if key in tuple_space:
+                return f"ERR {key} already exists"
+            else:
+                tuple_space[key] = value
+                return f"OK ({key}, {value}) added"
 
 
         else:
